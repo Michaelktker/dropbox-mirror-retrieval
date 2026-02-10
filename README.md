@@ -6,6 +6,16 @@ indexes **images** via Vertex AI Vector Search (multimodal embeddings) and
 
 ---
 
+## 🚀 Quick Start
+
+**Infrastructure deployed?** → See [TESTING.md](TESTING.md) for unblocking and testing.
+
+**Starting fresh?** → Follow [Setup](#setup-one-time) below.
+
+**Current Status**: Infrastructure complete. **Testing blocked** — Dropbox permissions need fixing. See [TESTING.md](TESTING.md).
+
+---
+
 ## Architecture
 
 ```
@@ -249,6 +259,43 @@ Each file gets a JSON sidecar at `mirror/meta/<file_id>.json`:
 | `daily-dropbox-sync` | 02:00 UTC | Dropbox → GCS incremental sync |
 | `daily-image-embed` | 04:00 UTC | New/changed images → Vector Search |
 | `daily-docs-reimport` | 05:00 UTC | Re-import docs into Vertex AI Search |
+
+---
+
+## Testing
+
+**See [TESTING.md](TESTING.md) for comprehensive test guide.**
+
+Quick diagnostic:
+
+```bash
+# Check if Dropbox permissions are correct
+bash infra/check_dropbox_permissions.sh
+
+# Fix permissions & re-authorize
+bash infra/reauthorize_dropbox.sh
+
+# Run all tests
+bash infra/run_all_tests.sh
+```
+
+Individual tests:
+
+```bash
+# Test sync
+bash infra/test_sync.sh
+
+# Test embeddings
+bash infra/test_embeddings.sh
+
+# Test document search
+bash infra/test_doc_search.sh
+
+# Test queries
+bash curl/query_vector_search.sh "test query"
+bash curl/query_vertex_search.sh "test query"
+bash curl/combine_results.sh "test query"
+```
 
 ---
 

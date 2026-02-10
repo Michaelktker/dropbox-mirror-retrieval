@@ -1,6 +1,6 @@
 # IMPLEMENTATION PLAN — Dropbox → GCS → Vertex AI
 
-**Status**: Infrastructure complete. Schedulers deployed. Phase 7 testing in progress — sync job running.
+**Status**: Baseline sync **RUNNING** (execution `sync-dropbox-to-gcs-2wm5t`). Dropbox permissions fixed. Remaining: verify sync, run embedding + search tests.
 
 ---
 
@@ -42,18 +42,25 @@
 - [x] Set `PROJECT_ID` to your GCP project ID
 - [x] Verify `REGION` (default: `us-central1`)
 
-### Step 2.2 — Dropbox app setup
+### Step 2.2 — Dropbox app setup ✅
+
+**App**: `oyvml1upnprceii` (Full Dropbox access)
+
 - [x] Go to https://www.dropbox.com/developers/apps and create a new app
-- [x] Select **Scoped access**
+- [x] Select **Scoped access** + **Full Dropbox**
 - [x] Enable permissions: `files.metadata.read`, `files.content.read`
-- [x] Generate an OAuth2 refresh token (app key + app secret + refresh token)
-- [x] Note down: `APP_KEY`, `APP_SECRET`, `REFRESH_TOKEN`
+- [x] Click **Submit** on Permissions tab
+- [x] Re-authorize with explicit scopes (`account_info.read files.content.read files.metadata.read`)
+- [x] Note down: `APP_KEY=oyvml1upnprceii`, `APP_SECRET=k0xozrgmva84f35`
 
 ### Step 2.3 — Store secrets
 ```bash
 bash infra/store_secrets.sh <APP_KEY> <APP_SECRET> <REFRESH_TOKEN>
 ```
 - [x] Secrets stored in Secret Manager
+- [x] `DROPBOX_APP_KEY` = `oyvml1upnprceii` (v4)
+- [x] `DROPBOX_APP_SECRET` = `k0xozrgmva84f35` (v4)
+- [x] `DROPBOX_REFRESH_TOKEN` = v7 with scopes: `account_info.read files.content.read files.metadata.read`
 
 ### Step 2.4 — Enable APIs & create service account
 ```bash
@@ -143,18 +150,39 @@ bash infra/06_create_scheduler.sh
 
 ---
 
-## Phase 7: Testing
+## Phase 7: Testing — IN PROGRESS
 
-### Test A — Baseline sync
-- [x] Upload test files to Dropbox (mix of images, docs, media, unsupported)
-- [x] Run sync job: ⏳ **Running** (`sync-dropbox-to-gcs-8svrm`)
-  ```bash
-  gcloud run jobs execute sync-dropbox-to-gcs --region=us-central1
-  ```
+**Testing infrastructure created:**
+- [x] `infra/check_dropbox_permissions.sh` — diagnostic script
+- [x] `infra/reauthorize_dropbox.sh` — fix token with proper scopes
+- [x] `infra/test_sync.sh` — Test A: baseline sync
+- [x] `infra/test_embeddings.sh` — Test C: image embeddings
+- [x] `infra/test_doc_search.sh` — Test D: document search
+- [x] `infra/run_all_tests.sh` — comprehensive test suite
+- [x] `infra/set_test_env.sh` — set env vars for curl scripts
+- [x] `TESTING.md` — detailed testing guide
+
+### Test A — Baseline sync ⏳ RUNNING
+- [x] Dropbox has files (PDFs, images, docs, media confirmed in web UI)
+- [x] Cloud Run Job infrastructure works (job executes successfully)
+- [x] Dropbox permissions fixed — token has `account_info.read files.content.read files.metadata.read`
+- [x] Sync job started — execution `sync-dropbox-to-gcs-2wm5t` (2026-02-10 11:22 UTC)
+- [x] Logs confirm files syncing: Camera Uploads → `mirror/images/`
 - [ ] Verify GCS has files under `mirror/images/`, `mirror/docs/`, `mirror/media/`
 - [ ] Verify `mirror/meta/*.json` sidecars exist with correct schema
 - [ ] Verify `mirror/state/sync_state.json` has a cursor
 - [ ] Verify `mirror/state/path_index.json` maps paths → file IDs
+
+**To check status when resuming:**
+```bash
+# Check if sync completed
+gcloud run jobs executions describe sync-dropbox-to-gcs-2wm5t --region=us-central1 --format="value(status.conditions[0].type,status.conditions[0].status)"
+
+# Check GCS bucket contents
+gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/images/ | head -20
+gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/docs/ | head -20
+gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/
+```
 
 ### Test B — Incremental sync
 - [ ] Rename a folder in Dropbox
@@ -176,6 +204,7 @@ bash infra/06_create_scheduler.sh
 - [ ] Wait for Vertex AI Search indexing to complete (~minutes)
 - [ ] Test document search:
   ```bash
+  source infra/set_test_env.sh
   bash curl/query_vertex_search.sh "test document query"
   ```
 - [ ] Verify results return whole documents
@@ -183,6 +212,7 @@ bash infra/06_create_scheduler.sh
 ### Test E — Image search (Vector Search)
 - [ ] Test image search:
   ```bash
+  source infra/set_test_env.sh
   bash curl/query_vector_search.sh "a photo of a cat"
   ```
 - [ ] Verify results return file IDs with distances
@@ -190,6 +220,7 @@ bash infra/06_create_scheduler.sh
 ### Test F — Combined retrieval
 - [ ] Test combined:
   ```bash
+  source infra/set_test_env.sh
   bash curl/combine_results.sh "meeting presentation"
   ```
 - [ ] Verify JSON output has both `image_matches` and `document_matches`
@@ -212,21 +243,23 @@ bash infra/06_create_scheduler.sh
 
 ---
 
-## Quick Reference: Execution Order
+## When Resuming
 
-```
-1.  vim infra/variables.sh                              # set PROJECT_ID
-2.  bash infra/store_secrets.sh KEY SECRET TOKEN         # Dropbox creds
-3.  bash infra/01_setup_gcp.sh                           # APIs + SA
-4.  bash infra/02_create_bucket.sh                       # GCS bucket
-5.  bash infra/03_create_vector_search.sh                # ⏳ 30-60 min
-6.  bash infra/04_create_vertex_search.sh                # datastore + engine
-7.  export VECTOR_SEARCH_INDEX_ID=... VECTOR_SEARCH_ENDPOINT_ID=...
-8.  bash infra/05_build_and_deploy_jobs.sh               # Docker + Cloud Run
-9.  bash infra/06_create_scheduler.sh                    # daily triggers
-10. gcloud run jobs execute sync-dropbox-to-gcs ...      # test sync
-11. gcloud run jobs execute embed-images-to-vector-search ...  # test embed
-12. bash curl/query_vector_search.sh "test query"        # test image search
-13. bash curl/query_vertex_search.sh "test query"        # test doc search
-14. bash curl/combine_results.sh "test query"            # test combined
+```bash
+# 1. Check if baseline sync completed
+gcloud run jobs executions describe sync-dropbox-to-gcs-2wm5t \
+  --region=us-central1 \
+  --format="value(status.conditions[0].type,status.conditions[0].status)"
+
+# 2. If completed successfully, verify GCS contents
+gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/ | head -20
+
+# 3. Run image embeddings
+gcloud run jobs execute embed-images-to-vector-search --region=us-central1
+
+# 4. Test search queries
+source infra/set_test_env.sh
+bash curl/query_vector_search.sh "sunset photo"
+bash curl/query_vertex_search.sh "document"
+bash curl/combine_results.sh "presentation"
 ```
