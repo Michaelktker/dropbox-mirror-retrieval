@@ -10,6 +10,7 @@ echo "═══ Creating unstructured data store ═══"
 curl -s -X POST \
   "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores?dataStoreId=${DATASTORE_ID}" \
   -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "x-goog-user-project: ${PROJECT_ID}" \
   -H "Content-Type: application/json" \
   -d '{
     "displayName": "Dropbox Docs Datastore",
@@ -23,6 +24,7 @@ echo "═══ Creating search engine / app ═══"
 curl -s -X POST \
   "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/engines?engineId=${SEARCH_ENGINE_ID}" \
   -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "x-goog-user-project: ${PROJECT_ID}" \
   -H "Content-Type: application/json" \
   -d '{
     "displayName": "Dropbox Docs Search Engine",
@@ -39,6 +41,7 @@ echo "═══ Triggering initial import from GCS ═══"
 curl -s -X POST \
   "https://discoveryengine.googleapis.com/v1/projects/${PROJECT_ID}/locations/global/collections/default_collection/dataStores/${DATASTORE_ID}/branches/default_branch/documents:import" \
   -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  -H "x-goog-user-project: ${PROJECT_ID}" \
   -H "Content-Type: application/json" \
   -d '{
     "gcsSource": {

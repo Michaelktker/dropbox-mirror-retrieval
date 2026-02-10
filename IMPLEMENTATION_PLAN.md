@@ -1,6 +1,6 @@
 # IMPLEMENTATION PLAN — Dropbox → GCS → Vertex AI
 
-**Status**: Code complete. Infrastructure provisioning + deployment + testing remain.
+**Status**: Infrastructure complete. Schedulers deployed. Phase 7 testing in progress — sync job running.
 
 ---
 
@@ -38,37 +38,37 @@
 > Run these in a terminal authenticated to your GCP project.
 
 ### Step 2.1 — Edit variables
-- [ ] Open `infra/variables.sh`
-- [ ] Set `PROJECT_ID` to your GCP project ID
-- [ ] Verify `REGION` (default: `us-central1`)
+- [x] Open `infra/variables.sh`
+- [x] Set `PROJECT_ID` to your GCP project ID
+- [x] Verify `REGION` (default: `us-central1`)
 
 ### Step 2.2 — Dropbox app setup
-- [ ] Go to https://www.dropbox.com/developers/apps and create a new app
-- [ ] Select **Scoped access**
-- [ ] Enable permissions: `files.metadata.read`, `files.content.read`
-- [ ] Generate an OAuth2 refresh token (app key + app secret + refresh token)
-- [ ] Note down: `APP_KEY`, `APP_SECRET`, `REFRESH_TOKEN`
+- [x] Go to https://www.dropbox.com/developers/apps and create a new app
+- [x] Select **Scoped access**
+- [x] Enable permissions: `files.metadata.read`, `files.content.read`
+- [x] Generate an OAuth2 refresh token (app key + app secret + refresh token)
+- [x] Note down: `APP_KEY`, `APP_SECRET`, `REFRESH_TOKEN`
 
 ### Step 2.3 — Store secrets
 ```bash
 bash infra/store_secrets.sh <APP_KEY> <APP_SECRET> <REFRESH_TOKEN>
 ```
-- [ ] Secrets stored in Secret Manager
+- [x] Secrets stored in Secret Manager
 
 ### Step 2.4 — Enable APIs & create service account
 ```bash
 bash infra/01_setup_gcp.sh
 ```
-- [ ] APIs enabled (Vertex AI, Storage, Run, Scheduler, Secret Manager, Discovery Engine, Artifact Registry)
-- [ ] Service account created with Owner role
-- [ ] Artifact Registry Docker repo created
-- [ ] Docker auth configured
+- [x] APIs enabled (Vertex AI, Storage, Run, Scheduler, Secret Manager, Discovery Engine, Artifact Registry)
+- [x] Service account created with Owner role
+- [x] Artifact Registry Docker repo created
+- [x] Docker auth configured
 
 ### Step 2.5 — Create GCS bucket
 ```bash
 bash infra/02_create_bucket.sh
 ```
-- [ ] Bucket `gs://<PROJECT_ID>-dropbox-mirror` exists
+- [x] Bucket `gs://gen-lang-client-0540480379-dropbox-mirror` exists
 
 ---
 
@@ -80,13 +80,18 @@ bash infra/02_create_bucket.sh
 ```bash
 bash infra/03_create_vector_search.sh
 ```
-- [ ] Tree-AH index created (dim=1408, DOT_PRODUCT_DISTANCE, STREAM_UPDATE)
-- [ ] Public endpoint created
-- [ ] Index deployed to endpoint
-- [ ] Note down output values:
-  - `VECTOR_SEARCH_INDEX_ID` = _______________
-  - `VECTOR_SEARCH_ENDPOINT_ID` = _______________
+- [x] Tree-AH index created (dim=1408, DOT_PRODUCT_DISTANCE, BATCH_UPDATE)
+- [x] Public endpoint created
+- [x] Index deployed to endpoint
+- [x] Note down output values:
+  - `VECTOR_SEARCH_INDEX_ID` = `8915836435542573056`
+  - `VECTOR_SEARCH_ENDPOINT_ID` = `7079528871854342144`
   - `VECTOR_SEARCH_DEPLOYED_INDEX_ID` = `deployed_dropbox_images`
+
+**Check deployment status:**
+```bash
+gcloud ai index-endpoints describe 7079528871854342144 --region=us-central1 | grep -A5 deployedIndexes
+```
 
 ---
 
@@ -96,33 +101,33 @@ bash infra/03_create_vector_search.sh
 ```bash
 bash infra/04_create_vertex_search.sh
 ```
-- [ ] Unstructured datastore created (`CONTENT_REQUIRED`)
-- [ ] Search engine/app created
-- [ ] Initial import triggered from `gs://…/mirror/docs/**`
-- [ ] Note down output values:
-  - `VERTEX_SEARCH_DATASTORE_ID` = _______________
-  - `VERTEX_SEARCH_ENGINE_ID` = _______________
+- [x] Unstructured datastore created (`CONTENT_REQUIRED`)
+- [x] Search engine/app created
+- [ ] Initial import triggered from `gs://…/mirror/docs/**` (skipped — bucket empty until first sync)
+- [x] Note down output values:
+  - `VERTEX_SEARCH_DATASTORE_ID` = `dropbox-docs-datastore`
+  - `VERTEX_SEARCH_ENGINE_ID` = `dropbox-docs-engine`
 
 ---
 
 ## Phase 5: Build & Deploy Cloud Run Jobs
 
 ### Step 5.1 — Set Vector Search IDs
-- [ ] Edit `infra/05_build_and_deploy_jobs.sh` or export env vars:
+- [x] Export env vars:
   ```bash
-  export VECTOR_SEARCH_INDEX_ID=<from step 3.1>
-  export VECTOR_SEARCH_ENDPOINT_ID=<from step 3.1>
+  export VECTOR_SEARCH_INDEX_ID=8915836435542573056
+  export VECTOR_SEARCH_ENDPOINT_ID=7079528871854342144
   ```
 
 ### Step 5.2 — Build images & create jobs
 ```bash
 bash infra/05_build_and_deploy_jobs.sh
 ```
-- [ ] `sync-dropbox-to-gcs` image built & pushed
-- [ ] `embed-images-to-vector-search` image built & pushed
-- [ ] Cloud Run Job A created (sync, 2Gi RAM, 1 CPU)
-- [ ] Cloud Run Job B created (embed, 4Gi RAM, 2 CPU)
-- [ ] Secrets mounted from Secret Manager
+- [x] `sync-dropbox-to-gcs` image built & pushed
+- [x] `embed-images-to-vector-search` image built & pushed
+- [x] Cloud Run Job A created (sync, 2Gi RAM, 1 CPU)
+- [x] Cloud Run Job B created (embed, 4Gi RAM, 2 CPU)
+- [x] Secrets mounted from Secret Manager
 
 ---
 
@@ -132,17 +137,17 @@ bash infra/05_build_and_deploy_jobs.sh
 ```bash
 bash infra/06_create_scheduler.sh
 ```
-- [ ] `daily-dropbox-sync` → 02:00 UTC
-- [ ] `daily-image-embed` → 04:00 UTC
-- [ ] `daily-docs-reimport` → 05:00 UTC
+- [x] `daily-dropbox-sync` → 02:00 UTC
+- [x] `daily-image-embed` → 04:00 UTC
+- [x] `daily-docs-reimport` → 05:00 UTC
 
 ---
 
 ## Phase 7: Testing
 
 ### Test A — Baseline sync
-- [ ] Upload test files to Dropbox (mix of images, docs, media, unsupported)
-- [ ] Run sync job:
+- [x] Upload test files to Dropbox (mix of images, docs, media, unsupported)
+- [x] Run sync job: ⏳ **Running** (`sync-dropbox-to-gcs-8svrm`)
   ```bash
   gcloud run jobs execute sync-dropbox-to-gcs --region=us-central1
   ```

@@ -4,7 +4,7 @@
 # Edit these values ONCE before running any script.
 # ─────────────────────────────────────────────────────────────
 
-export PROJECT_ID="YOUR_GCP_PROJECT_ID"       # ← replace
+export PROJECT_ID="gen-lang-client-0540480379"
 export REGION="us-central1"
 export BUCKET_NAME="${PROJECT_ID}-dropbox-mirror"
 

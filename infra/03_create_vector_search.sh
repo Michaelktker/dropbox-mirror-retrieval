@@ -14,28 +14,37 @@ DIMENSIONS=1408
 
 echo "═══ Creating Vector Search tree-AH index (dim=${DIMENSIONS}) ═══"
 
+# Create temporary metadata file
+METADATA_FILE=$(mktemp)
+cat > "${METADATA_FILE}" <<EOF
+{
+  "contentsDeltaUri": "",
+  "config": {
+    "dimensions": ${DIMENSIONS},
+    "approximateNeighborsCount": 150,
+    "distanceMeasureType": "DOT_PRODUCT_DISTANCE",
+    "shardSize": "SHARD_SIZE_SMALL",
+    "algorithm_config": {
+      "treeAhConfig": {
+        "leafNodeEmbeddingCount": 500,
+        "leafNodesToSearchPercent": 10
+      }
+    }
+  }
+}
+EOF
+
 # Create index (async — returns operation name)
 INDEX_OP=$(gcloud ai indexes create \
   --display-name="${VS_INDEX_DISPLAY_NAME}" \
   --metadata-schema-uri="gs://google-cloud-aiplatform/schema/matchingengine/metadata/nearest_neighbor_search_1.0.0.yaml" \
-  --metadata='{
-    "contentsDeltaUri": "",
-    "config": {
-      "dimensions": '"${DIMENSIONS}"',
-      "approximateNeighborsCount": 150,
-      "distanceMeasureType": "DOT_PRODUCT_DISTANCE",
-      "shardSize": "SHARD_SIZE_SMALL",
-      "algorithm_config": {
-        "treeAhConfig": {
-          "leafNodeEmbeddingCount": 500,
-          "leafNodesToSearchPercent": 10
-        }
-      }
-    }
-  }' \
+  --metadata-file="${METADATA_FILE}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
   --format="value(name)" 2>&1 | tail -1)
+
+# Clean up temp file
+rm -f "${METADATA_FILE}"
 
 echo "Index operation: ${INDEX_OP}"
 echo "Waiting for index creation (this can take 20-40 min)…"
