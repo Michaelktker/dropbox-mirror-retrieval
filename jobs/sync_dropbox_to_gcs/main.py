@@ -10,6 +10,7 @@ Behaviour:
 """
 
 import logging
+import os
 import sys
 
 # ── make `shared` importable when running from repo root ──
@@ -117,7 +118,12 @@ def run() -> None:
             meta = read_json(BUCKET, meta_key(file_id))
             cat = meta.get("category")
             if cat:
-                delete_blob(BUCKET, gcs_key(cat, file_id))
+                # For docs, gcs_uri includes extension; extract it
+                gcs_uri = meta.get("gcs_uri", "")
+                extension = ""
+                if cat == "docs" and gcs_uri:
+                    _, extension = os.path.splitext(gcs_uri)
+                delete_blob(BUCKET, gcs_key(cat, file_id, extension))
             delete_blob(BUCKET, meta_key(file_id))
             path_index.pop(path_lower, None)
             rev_index.pop(file_id, None)
@@ -153,7 +159,10 @@ def run() -> None:
                 stats["unchanged"] += 1
                 continue
 
-            obj_key = gcs_key(cat, file_id)
+            # For docs, include file extension so Vertex AI Search can detect type
+            _, ext = os.path.splitext(entry.name)
+            extension = ext.lower() if cat == "docs" else ""
+            obj_key = gcs_key(cat, file_id, extension)
 
             # Download from Dropbox
             try:

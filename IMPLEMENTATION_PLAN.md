@@ -1,8 +1,49 @@
 # IMPLEMENTATION PLAN — Dropbox → GCS → Vertex AI
 
 **Status**: 
-- **Image embeddings** ⏳ RUNNING — execution `embed-images-to-vector-search-gwl88` (pre-filters >20MB images)
-- **Document import** ⏳ RUNNING — 4,143 docs importing to OCR-enabled datastore
+- **Image embeddings** ⏳ IN PROGRESS — 14,951/22,277 embedded, Cloud Run job running with 24hr timeout
+- **Document import** ⏳ IN PROGRESS — 4,144 docs importing to OCR-enabled Vertex AI Search datastore
+
+---
+
+## Current Running Jobs (Cloud-Side)
+
+Both processes are running on Google Cloud infrastructure — safe to close terminal.
+
+| Process | Status | Est. Completion |
+|---------|--------|----------------|
+| **Document Import** | Running on Vertex AI Search | ~3-4 hours |
+| **Image Embedding** | Running on Cloud Run (`embed-images-to-vector-search-f8jjn`) | ~2-4 hours |
+
+**Check progress:**
+```bash
+# Document import progress
+curl -s "https://discoveryengine.googleapis.com/v1/projects/704456193276/locations/global/collections/default_collection/dataStores/dropbox-docs-datastore-ocr/branches/0/operations/import-documents-13076529950805489230" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -c "import json,sys; d=json.load(sys.stdin); m=d.get('metadata',{}); print(f'Docs: {m.get(\"successCount\",0)}/{m.get(\"totalCount\",\"?\")}')"
+
+# Image embedding progress (datapoint count in Vector Search)
+curl -s "https://us-central1-aiplatform.googleapis.com/v1/projects/gen-lang-client-0540480379/locations/us-central1/indexes/3582448576829063168" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Images embedded:', d.get('indexStats',{}).get('vectorsCount','N/A'))"
+
+# Check embed job execution status
+gcloud run jobs executions describe embed-images-to-vector-search-f8jjn --region=us-central1 --format="value(status.conditions[0].type,status.conditions[0].status)"
+```
+
+---
+
+## Resolved Blockers
+
+### ~~Documents Need File Extensions~~ ✅ RESOLVED
+Vertex AI Search requires files with extensions (`.pdf`, `.docx`, etc.) but docs were stored without extensions.
+
+**Fix Applied:**
+1. ✅ Modified `shared/categories.py` — `gcs_key()` now accepts optional `extension` parameter
+2. ✅ Modified `jobs/sync_dropbox_to_gcs/main.py` — adds extension for docs category
+3. ✅ Deleted old docs from GCS (4,143 files without extensions)
+4. ✅ Rebuilt and pushed sync job with extension changes
+5. ✅ Cleared rev_index doc entries + cursor to force full re-sync
+6. ✅ Ran sync job — docs re-downloaded with `.pdf`, `.docx`, etc. extensions (4,144 total)
+7. ✅ Import triggered to OCR-enabled Vertex AI Search datastore (running now)
 
 ---
 
@@ -81,7 +122,7 @@ bash infra/02_create_bucket.sh
 
 ---
 
-## Phase 3: Vertex AI Vector Search (Images)
+## Phase 3: Vertex AI Vector Search (Images) ⏳ IN PROGRESS
 
 > ⏳ Index creation + deployment can take 30-60 minutes total.
 
@@ -102,9 +143,15 @@ bash infra/03_create_vector_search.sh
 gcloud ai index-endpoints describe 2432588112593944576 --region=us-central1 | grep -A5 deployedIndexes
 ```
 
+**Current Stats:**
+- Images in GCS: 22,277
+- Images embedded: 14,951 (⏳ ~7,300 remaining)
+- Job timeout: 24 hours (increased from 1 hour)
+- Execution ID: `embed-images-to-vector-search-f8jjn`
+
 ---
 
-## Phase 4: Vertex AI Search (Documents)
+## Phase 4: Vertex AI Search (Documents) ⏳ IN PROGRESS
 
 ### Step 4.1 — Create datastore + search engine
 ```bash
@@ -114,10 +161,24 @@ bash infra/04_create_vertex_search.sh
 - [x] Search engine/app created
 - [x] **OCR enabled** — recreated datastore with `ocrParsingConfig.useNativeText: true`
 - [x] Old datastore deleted (no OCR)
-- [x] Initial import triggered via JSONL metadata file (4,143 docs)
+- [x] Docs re-synced with file extensions (`.pdf`, `.docx`, etc.)
+- [x] Import triggered to OCR-enabled datastore (⏳ running now)
 - [x] Note down output values:
   - `VERTEX_SEARCH_DATASTORE_ID` = `dropbox-docs-datastore-ocr`
   - `VERTEX_SEARCH_ENGINE_ID` = `dropbox-docs-engine-ocr`
+
+**Current Stats:**
+- Docs in GCS: 4,144 (with proper extensions)
+- Import operation: `import-documents-13076529950805489230`
+- Status: ⏳ Running (OCR processing takes ~3 sec/doc)
+
+**Extension breakdown:**
+- 3,479 PDFs
+- 356 DOCX
+- 213 XLSX
+- 66 TXT
+- 22 PPTX
+- 8 HTML
 
 ---
 
@@ -137,7 +198,7 @@ bash infra/05_build_and_deploy_jobs.sh
 - [x] `sync-dropbox-to-gcs` image built & pushed
 - [x] `embed-images-to-vector-search` image built & pushed
 - [x] Cloud Run Job A created (sync, 2Gi RAM, 1 CPU)
-- [x] Cloud Run Job B created (embed, 4Gi RAM, 2 CPU)
+- [x] Cloud Run Job B created (embed, 4Gi RAM, 2 CPU, **24hr timeout**)
 - [x] Secrets mounted from Secret Manager
 
 ---
@@ -173,7 +234,7 @@ bash infra/06_create_scheduler.sh
 - [x] **Code improved**: Added checkpoint saving every 100 files, rev_index to skip already-synced files
 - [x] Sync job completed — execution `sync-dropbox-to-gcs-gwn4p` (2026-02-12)
 - [x] **rev_index exists** — checkpoints saving, progress survives timeouts
-- [x] GCS has files under `mirror/images/` (11,800+), `mirror/docs/` (1,100+)
+- [x] GCS has files under `mirror/images/` (22,277), `mirror/docs/` (4,144)
 - [x] `mirror/meta/*.json` sidecars exist with correct schema
 - [x] `mirror/state/sync_state.json` has a cursor (saved on completion)
 - [x] `mirror/state/rev_index.json` tracks file_id → revision
@@ -205,34 +266,29 @@ gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/
 - [ ] Verify deleted file removed from GCS + meta
 - [ ] Verify metadata updated for renamed paths
 
-### Test C — Image embeddings ⏳ RUNNING
+### Test C — Image embeddings ⏳ IN PROGRESS
 - [x] Index recreated with `STREAM_UPDATE` (was `BATCH_UPDATE`)
 - [x] Deploy script fixed to pass env vars on update
 - [x] **Pre-filter added** — skips images >20MB (Vertex AI 27MB base64 limit)
 - [x] Rebuilt container for `linux/amd64` (Cloud Run compatible)
-- [x] Embed job running — execution `embed-images-to-vector-search-gwl88`
-- [x] Checkpoint saving every 50 embeddings (survives timeouts)
-- [x] Last checkpoint: embedded=500, skipped=8500
-- [ ] Verify `mirror/state/embedding_state.json` tracks file_id → rev
-- [ ] Verify Vector Search index has datapoints
+- [x] Checkpoint saving every 50 embeddings (survived multiple timeouts)
+- [x] `mirror/state/embedding_state.json` tracks file_id → rev
+- [x] Vector Search index has datapoints
+- [x] Job timeout increased to 24 hours
+- [ ] ⏳ **Running**: ~7,300 images remaining (execution `embed-images-to-vector-search-f8jjn`)
 
-**Monitor progress:**
-```bash
-# Check for checkpoints
-gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=embed-images-to-vector-search AND textPayload:Checkpoint" --limit=1 --format="value(textPayload)"
+**Embedding Stats (current):**
+- Total images in GCS: 22,277
+- Successfully embedded: 14,951
+- Remaining: ~7,300
+- Job timeout: 24 hours
 
-# Check execution status
-gcloud run jobs executions list --job=embed-images-to-vector-search --region=us-central1 --limit=3
-
-# If timed out, re-run (skips already-embedded images)
-gcloud run jobs execute embed-images-to-vector-search --region=us-central1
-```
-
-### Test D — Document search ⏳ IMPORTING
-- [x] JSONL metadata file generated (4,143 documents)
+### Test D — Document search ⏳ IN PROGRESS
 - [x] OCR-enabled datastore created (`dropbox-docs-datastore-ocr`)
-- [x] Import triggered — operation `import-documents-14508516734571464834`
-- [ ] Wait for import to complete (15-30 min with OCR)
+- [x] Old non-OCR datastore deleted
+- [x] Docs re-synced with file extensions (`.pdf`, `.docx`, etc.)
+- [x] Import triggered to Vertex AI Search (⏳ running now)
+- [ ] Wait for import to complete
 - [ ] Test document search:
   ```bash
   source infra/set_test_env.sh
@@ -242,8 +298,8 @@ gcloud run jobs execute embed-images-to-vector-search --region=us-central1
 
 **Check import progress:**
 ```bash
-curl -s "https://discoveryengine.googleapis.com/v1/projects/gen-lang-client-0540480379/locations/global/collections/default_collection/dataStores/dropbox-docs-datastore-ocr/branches/0/operations/import-documents-14508516734571464834" \
-  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -m json.tool
+curl -s "https://discoveryengine.googleapis.com/v1/projects/704456193276/locations/global/collections/default_collection/dataStores/dropbox-docs-datastore-ocr/branches/0/operations/import-documents-13076529950805489230" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -c "import json,sys; d=json.load(sys.stdin); m=d.get('metadata',{}); print(f'Docs: {m.get(\"successCount\",0)}/{m.get(\"totalCount\",\"?\")}')"
 ```
 
 ### Test E — Image search (Vector Search)
@@ -282,27 +338,60 @@ curl -s "https://discoveryengine.googleapis.com/v1/projects/gen-lang-client-0540
 
 ## When Resuming
 
+### Check Job Completion
+
+```bash
+# 1. Check document import (should show done: True when complete)
+curl -s "https://discoveryengine.googleapis.com/v1/projects/704456193276/locations/global/collections/default_collection/dataStores/dropbox-docs-datastore-ocr/branches/0/operations/import-documents-13076529950805489230" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -c "import json,sys; d=json.load(sys.stdin); m=d.get('metadata',{}); print(f'Docs: {m.get(\"successCount\",0)}/{m.get(\"totalCount\",\"?\")}')"
+
+# 2. Check image embedding job status
+gcloud run jobs executions describe embed-images-to-vector-search-f8jjn --region=us-central1 --format="value(status.conditions[0].type,status.conditions[0].status)"
+
+# 3. Check Vector Search datapoint count (target: ~22,000)
+curl -s "https://us-central1-aiplatform.googleapis.com/v1/projects/gen-lang-client-0540480379/locations/us-central1/indexes/3582448576829063168" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Images embedded:', d.get('indexStats',{}).get('vectorsCount','N/A'))"
+```
+
+### After Jobs Complete — Test Searches
+
+```bash
+# Set env vars
+source infra/set_test_env.sh
+
+# Test image search
+bash curl/query_vector_search.sh "sunset photo"
+
+# Test doc search
+bash curl/query_vertex_search.sh "meeting notes"
+
+# Test combined
+bash curl/combine_results.sh "presentation"
+```
+
+### General Status Checks
+
 ```bash
 # 1. Check embed job status
 gcloud run jobs executions list --job=embed-images-to-vector-search --region=us-central1 --limit=3
 
-# 2. Check embedding progress via checkpoints
-gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=embed-images-to-vector-search AND textPayload:Checkpoint" --limit=1 --format="value(textPayload)"
+# 2. Check file counts in GCS
+gsutil ls "gs://gen-lang-client-0540480379-dropbox-mirror/mirror/images/" | wc -l
+gsutil ls "gs://gen-lang-client-0540480379-dropbox-mirror/mirror/docs/" | wc -l
 
-# 3. If timed out or failed, re-run (or use Cloud Console → Cloud Run → Jobs → Execute)
-gcloud run jobs execute embed-images-to-vector-search --region=us-central1
+# 3. Check Vector Search index datapoint count
+curl -s "https://us-central1-aiplatform.googleapis.com/v1/projects/gen-lang-client-0540480379/locations/us-central1/indexes/3582448576829063168" \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Datapoints:', d.get('indexStats',{}).get('vectorsCount','N/A'))"
 
-# 4. Check document import progress
-curl -s "https://discoveryengine.googleapis.com/v1/projects/gen-lang-client-0540480379/locations/global/collections/default_collection/dataStores/dropbox-docs-datastore-ocr/branches/0/operations" \
-  -H "Authorization: Bearer $(gcloud auth print-access-token)" | python3 -m json.tool
-
-# 5. Set env vars before running deploy or test scripts
+# 4. Set env vars before running deploy or test scripts
 export VECTOR_SEARCH_INDEX_ID=3582448576829063168
 export VECTOR_SEARCH_ENDPOINT_ID=2432588112593944576
 
-# 6. Test search queries (after embeddings/import complete)
+# 5. Test image search (embeddings complete)
 source infra/set_test_env.sh
 bash curl/query_vector_search.sh "sunset photo"
+
+# 6. Test doc search (after import complete)
 bash curl/query_vertex_search.sh "document"
 bash curl/combine_results.sh "presentation"
 ```

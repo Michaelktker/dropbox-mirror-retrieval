@@ -57,9 +57,13 @@ def gcs_prefix(category: str) -> str:
     return GCS_PREFIXES[category]
 
 
-def gcs_key(category: str, file_id: str) -> str:
-    """Full GCS object key: mirror/<category>/<file_id>."""
-    return f"{gcs_prefix(category)}{file_id}"
+def gcs_key(category: str, file_id: str, extension: str = "") -> str:
+    """Full GCS object key: mirror/<category>/<file_id>[.ext].
+    
+    For docs, include the extension so Vertex AI Search can detect file type.
+    For images/media, extension is optional (embedding uses raw bytes).
+    """
+    return f"{gcs_prefix(category)}{file_id}{extension}"
 
 
 def meta_key(file_id: str) -> str:
