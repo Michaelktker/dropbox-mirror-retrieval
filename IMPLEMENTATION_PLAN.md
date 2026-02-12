@@ -1,6 +1,6 @@
 # IMPLEMENTATION PLAN — Dropbox → GCS → Vertex AI
 
-**Status**: Baseline sync **RUNNING** (execution `sync-dropbox-to-gcs-2wm5t`). Dropbox permissions fixed. Remaining: verify sync, run embedding + search tests.
+**Status**: Test C (image embeddings) **RUNNING** — execution `embed-images-to-vector-search-wrcfj`. New STREAM_UPDATE index deployed. Checkpoints every 50 embeddings.
 
 ---
 
@@ -8,11 +8,11 @@
 
 - [x] `.gitignore`
 - [x] `shared/__init__.py`
-- [x] `shared/config.py` — env-var config (all required + optional vars)
+- [x] `shared/config.py` — env-var config (all required + optional vars) + `REV_INDEX_KEY`
 - [x] `shared/categories.py` — extension → category mapping, GCS key helpers, MIME types
 - [x] `shared/gcs.py` — upload/download/delete/JSON/list helpers
 - [x] `shared/dropbox_client.py` — OAuth2 refresh-token flow, cursor listing, download
-- [x] `jobs/sync_dropbox_to_gcs/main.py` — Job A (baseline crawl + incremental sync + deletions)
+- [x] `jobs/sync_dropbox_to_gcs/main.py` — Job A (baseline crawl + incremental sync + deletions + **checkpoint saving**)
 - [x] `jobs/sync_dropbox_to_gcs/Dockerfile`
 - [x] `jobs/sync_dropbox_to_gcs/requirements.txt`
 - [x] `jobs/embed_images_to_vector_search/main.py` — Job B (embed images, upsert/remove datapoints)
@@ -87,17 +87,17 @@ bash infra/02_create_bucket.sh
 ```bash
 bash infra/03_create_vector_search.sh
 ```
-- [x] Tree-AH index created (dim=1408, DOT_PRODUCT_DISTANCE, BATCH_UPDATE)
+- [x] Tree-AH index created (dim=1408, DOT_PRODUCT_DISTANCE, **STREAM_UPDATE**)
 - [x] Public endpoint created
 - [x] Index deployed to endpoint
 - [x] Note down output values:
-  - `VECTOR_SEARCH_INDEX_ID` = `8915836435542573056`
-  - `VECTOR_SEARCH_ENDPOINT_ID` = `7079528871854342144`
+  - `VECTOR_SEARCH_INDEX_ID` = `3582448576829063168`
+  - `VECTOR_SEARCH_ENDPOINT_ID` = `2432588112593944576`
   - `VECTOR_SEARCH_DEPLOYED_INDEX_ID` = `deployed_dropbox_images`
 
 **Check deployment status:**
 ```bash
-gcloud ai index-endpoints describe 7079528871854342144 --region=us-central1 | grep -A5 deployedIndexes
+gcloud ai index-endpoints describe 2432588112593944576 --region=us-central1 | grep -A5 deployedIndexes
 ```
 
 ---
@@ -122,8 +122,8 @@ bash infra/04_create_vertex_search.sh
 ### Step 5.1 — Set Vector Search IDs
 - [x] Export env vars:
   ```bash
-  export VECTOR_SEARCH_INDEX_ID=8915836435542573056
-  export VECTOR_SEARCH_ENDPOINT_ID=7079528871854342144
+  export VECTOR_SEARCH_INDEX_ID=3582448576829063168
+  export VECTOR_SEARCH_ENDPOINT_ID=2432588112593944576
   ```
 
 ### Step 5.2 — Build images & create jobs
@@ -162,21 +162,30 @@ bash infra/06_create_scheduler.sh
 - [x] `infra/set_test_env.sh` — set env vars for curl scripts
 - [x] `TESTING.md` — detailed testing guide
 
-### Test A — Baseline sync ⏳ RUNNING
+### Test A — Baseline sync ✅ COMPLETE
 - [x] Dropbox has files (PDFs, images, docs, media confirmed in web UI)
 - [x] Cloud Run Job infrastructure works (job executes successfully)
 - [x] Dropbox permissions fixed — token has `account_info.read files.content.read files.metadata.read`
-- [x] Sync job started — execution `sync-dropbox-to-gcs-2wm5t` (2026-02-10 11:22 UTC)
-- [x] Logs confirm files syncing: Camera Uploads → `mirror/images/`
-- [ ] Verify GCS has files under `mirror/images/`, `mirror/docs/`, `mirror/media/`
-- [ ] Verify `mirror/meta/*.json` sidecars exist with correct schema
-- [ ] Verify `mirror/state/sync_state.json` has a cursor
-- [ ] Verify `mirror/state/path_index.json` maps paths → file IDs
+- [x] **Code improved**: Added checkpoint saving every 100 files, rev_index to skip already-synced files
+- [x] Sync job completed — execution `sync-dropbox-to-gcs-gwn4p` (2026-02-12)
+- [x] **rev_index exists** — checkpoints saving, progress survives timeouts
+- [x] GCS has files under `mirror/images/` (11,800+), `mirror/docs/` (1,100+)
+- [x] `mirror/meta/*.json` sidecars exist with correct schema
+- [x] `mirror/state/sync_state.json` has a cursor (saved on completion)
+- [x] `mirror/state/rev_index.json` tracks file_id → revision
+- [x] `mirror/state/path_index.json` maps paths → file IDs (saved on completion)
 
-**To check status when resuming:**
+**To check status:**
 ```bash
-# Check if sync completed
-gcloud run jobs executions describe sync-dropbox-to-gcs-2wm5t --region=us-central1 --format="value(status.conditions[0].type,status.conditions[0].status)"
+# Check execution status
+gcloud run jobs executions describe sync-dropbox-to-gcs-gwn4p --region=us-central1 --format="value(status.conditions[0].type,status.conditions[0].status)"
+
+# Check file counts
+gsutil ls -r gs://gen-lang-client-0540480379-dropbox-mirror/mirror/images/ | wc -l
+gsutil ls -r gs://gen-lang-client-0540480379-dropbox-mirror/mirror/docs/ | wc -l
+
+# Check rev_index (checkpoint)
+gsutil cat gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/rev_index.json | head -5
 
 # Check GCS bucket contents
 gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/images/ | head -20
@@ -192,13 +201,28 @@ gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/
 - [ ] Verify deleted file removed from GCS + meta
 - [ ] Verify metadata updated for renamed paths
 
-### Test C — Image embeddings
-- [ ] Run embed job:
-  ```bash
-  gcloud run jobs execute embed-images-to-vector-search --region=us-central1
-  ```
+### Test C — Image embeddings ⏳ RUNNING
+- [x] Index recreated with `STREAM_UPDATE` (was `BATCH_UPDATE`)
+- [x] Deploy script fixed to pass env vars on update
+- [x] Embed job running — execution `embed-images-to-vector-search-wrcfj`
+- [x] Checkpoint saving every 50 embeddings (survives timeouts)
 - [ ] Verify `mirror/state/embedding_state.json` tracks file_id → rev
-- [ ] Verify Vector Search index has datapoints (via `gcloud ai indexes describe`)
+- [ ] Verify Vector Search index has datapoints
+
+**Monitor progress:**
+```bash
+# Check for successful embeddings
+gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=embed-images-to-vector-search AND textPayload:Embedded" --limit=10 --format="value(timestamp,textPayload)"
+
+# Check for checkpoints
+gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=embed-images-to-vector-search AND textPayload:Checkpoint" --limit=5 --format="value(timestamp,textPayload)"
+
+# Check execution status
+gcloud run jobs executions describe embed-images-to-vector-search-wrcfj --region=us-central1 --format="value(status.conditions[0].type,status.conditions[0].status)"
+
+# If timed out, re-run (skips already-embedded images)
+gcloud run jobs execute embed-images-to-vector-search --region=us-central1
+```
 
 ### Test D — Document search
 - [ ] Wait for Vertex AI Search indexing to complete (~minutes)
@@ -246,18 +270,22 @@ gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/
 ## When Resuming
 
 ```bash
-# 1. Check if baseline sync completed
-gcloud run jobs executions describe sync-dropbox-to-gcs-2wm5t \
+# 1. Check embed job status
+gcloud run jobs executions describe embed-images-to-vector-search-wrcfj \
   --region=us-central1 \
   --format="value(status.conditions[0].type,status.conditions[0].status)"
 
-# 2. If completed successfully, verify GCS contents
-gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/ | head -20
+# 2. Check embedding progress via checkpoints
+gsutil cat gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/embedding_state.json | wc -l
 
-# 3. Run image embeddings
+# 3. If timed out or failed, re-run (skips already-embedded images)
 gcloud run jobs execute embed-images-to-vector-search --region=us-central1
 
-# 4. Test search queries
+# 4. Set env vars before running deploy or test scripts
+export VECTOR_SEARCH_INDEX_ID=3582448576829063168
+export VECTOR_SEARCH_ENDPOINT_ID=2432588112593944576
+
+# 5. Test search queries (after embeddings complete)
 source infra/set_test_env.sh
 bash curl/query_vector_search.sh "sunset photo"
 bash curl/query_vertex_search.sh "document"

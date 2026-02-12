@@ -67,6 +67,8 @@ def run() -> None:
     current_image_ids: set[str] = set()
 
     stats = {"embedded": 0, "skipped": 0, "removed": 0, "errors": 0}
+    checkpoint_interval = 50  # Save state every N embeddings to survive timeouts
+    embeddings_since_checkpoint = 0
 
     for mk in meta_keys:
         if not mk.endswith(".json"):
@@ -117,7 +119,18 @@ def run() -> None:
 
             embedding_state[file_id] = rev
             stats["embedded"] += 1
+            embeddings_since_checkpoint += 1
             logger.info("Embedded %s (rev=%s)", meta.get("caption", file_id), rev)
+
+            # ── Checkpoint save to survive timeouts ───────
+            if embeddings_since_checkpoint >= checkpoint_interval:
+                write_json(BUCKET, config.EMBEDDING_STATE_KEY, embedding_state)
+                logger.info(
+                    "Checkpoint saved — embedded=%d  skipped=%d so far",
+                    stats["embedded"],
+                    stats["skipped"],
+                )
+                embeddings_since_checkpoint = 0
 
         except Exception:
             logger.exception("Failed to embed %s", file_id)

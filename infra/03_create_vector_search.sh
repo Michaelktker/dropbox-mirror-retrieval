@@ -12,9 +12,9 @@ source "${SCRIPT_DIR}/variables.sh"
 
 DIMENSIONS=1408
 
-echo "═══ Creating Vector Search tree-AH index (dim=${DIMENSIONS}) ═══"
+echo "═══ Creating Vector Search tree-AH index (dim=${DIMENSIONS}, STREAM_UPDATE) ═══"
 
-# Create temporary metadata file
+# Create temporary metadata file - with indexUpdateMethod for streaming updates
 METADATA_FILE=$(mktemp)
 cat > "${METADATA_FILE}" <<EOF
 {
@@ -35,10 +35,12 @@ cat > "${METADATA_FILE}" <<EOF
 EOF
 
 # Create index (async — returns operation name)
+# Using --index-update-method=STREAM_UPDATE for real-time upserts
 INDEX_OP=$(gcloud ai indexes create \
   --display-name="${VS_INDEX_DISPLAY_NAME}" \
   --metadata-schema-uri="gs://google-cloud-aiplatform/schema/matchingengine/metadata/nearest_neighbor_search_1.0.0.yaml" \
   --metadata-file="${METADATA_FILE}" \
+  --index-update-method=STREAM_UPDATE \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
   --format="value(name)" 2>&1 | tail -1)

@@ -58,6 +58,7 @@ GCS_PREFIX_STATE = "mirror/state/"
 
 SYNC_STATE_KEY = "mirror/state/sync_state.json"
 PATH_INDEX_KEY = "mirror/state/path_index.json"
+REV_INDEX_KEY = "mirror/state/rev_index.json"
 EMBEDDING_STATE_KEY = "mirror/state/embedding_state.json"
 
 # ── Embedding model ──────────────────────────────────────────

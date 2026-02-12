@@ -21,6 +21,7 @@ from shared.categories import categorize, gcs_key, meta_key, mime_type  # noqa: 
 from shared.dropbox_client import DropboxClient  # noqa: E402
 from shared.gcs import (  # noqa: E402
     delete_blob,
+    list_blobs,
     read_json,
     upload_bytes,
     write_json,
@@ -39,6 +40,9 @@ BUCKET = config.GCS_BUCKET_NAME
 # Size limit: skip files larger than 150 MB (Dropbox SDK download limit)
 MAX_FILE_SIZE = 150 * 1024 * 1024
 
+# Save state every N files to survive timeouts
+SAVE_INTERVAL = 100
+
 
 def _clean_file_id(raw_id: str) -> str:
     """Strip the 'id:' prefix Dropbox uses, keep alphanumeric ID."""
@@ -56,7 +60,24 @@ def run() -> None:
     # ── Load state ────────────────────────────────────────
     sync_state = read_json(BUCKET, config.SYNC_STATE_KEY)
     path_index: dict[str, str] = read_json(BUCKET, config.PATH_INDEX_KEY)
+    rev_index: dict[str, str] = read_json(BUCKET, config.REV_INDEX_KEY) or {}
     # path_index: { dropbox_path_lower: file_id }
+    # rev_index: { file_id: rev } — tracks synced revisions to skip unchanged files
+
+    # ── Rebuild rev_index from existing metadata (migration) ──
+    if not rev_index:
+        logger.info("Rebuilding rev_index from existing metadata...")
+        meta_keys = list_blobs(BUCKET, config.GCS_PREFIX_META)
+        for mkey in meta_keys:
+            if mkey.endswith(".json"):
+                meta = read_json(BUCKET, mkey)
+                fid = meta.get("dropbox_file_id")
+                rev = meta.get("rev")
+                if fid and rev:
+                    rev_index[fid] = rev
+        if rev_index:
+            write_json(BUCKET, config.REV_INDEX_KEY, rev_index)
+            logger.info("Rebuilt rev_index with %d entries", len(rev_index))
 
     saved_cursor = sync_state.get("cursor")
 
@@ -69,7 +90,14 @@ def run() -> None:
         entries, new_cursor = dbx.list_all("")
 
     # ── Process entries ───────────────────────────────────
-    stats = {"synced": 0, "deleted": 0, "skipped": 0}
+    stats = {"synced": 0, "deleted": 0, "skipped": 0, "unchanged": 0}
+    total_processed = 0
+
+    def save_state_checkpoint():
+        """Save state periodically to survive timeouts."""
+        write_json(BUCKET, config.PATH_INDEX_KEY, path_index)
+        write_json(BUCKET, config.REV_INDEX_KEY, rev_index)
+        logger.info("Checkpoint saved: %d processed so far", total_processed)
 
     for entry in entries:
         # — Folders: skip —
@@ -92,8 +120,13 @@ def run() -> None:
                 delete_blob(BUCKET, gcs_key(cat, file_id))
             delete_blob(BUCKET, meta_key(file_id))
             path_index.pop(path_lower, None)
+            rev_index.pop(file_id, None)
             stats["deleted"] += 1
+            total_processed += 1
             logger.info("Deleted %s (id=%s)", path_lower, file_id)
+
+            if total_processed % SAVE_INTERVAL == 0:
+                save_state_checkpoint()
             continue
 
         # — Files —
@@ -114,6 +147,12 @@ def run() -> None:
                 continue
 
             file_id = _clean_file_id(entry.id)
+
+            # Skip if already synced with same revision
+            if rev_index.get(file_id) == entry.rev:
+                stats["unchanged"] += 1
+                continue
+
             obj_key = gcs_key(cat, file_id)
 
             # Download from Dropbox
@@ -142,21 +181,29 @@ def run() -> None:
             }
             write_json(BUCKET, meta_key(file_id), meta_obj)
 
-            # Update path index
+            # Update indexes
             path_index[entry.path_lower] = file_id
+            rev_index[file_id] = entry.rev
 
             stats["synced"] += 1
+            total_processed += 1
             logger.info("Synced %s → %s", entry.path_display, obj_key)
 
-    # ── Persist state ─────────────────────────────────────
+            # Periodic checkpoint
+            if total_processed % SAVE_INTERVAL == 0:
+                save_state_checkpoint()
+
+    # ── Persist final state ───────────────────────────────
     write_json(BUCKET, config.SYNC_STATE_KEY, {"cursor": new_cursor})
     write_json(BUCKET, config.PATH_INDEX_KEY, path_index)
+    write_json(BUCKET, config.REV_INDEX_KEY, rev_index)
 
     logger.info(
-        "Sync complete — synced=%d  deleted=%d  skipped=%d",
+        "Sync complete — synced=%d  deleted=%d  skipped=%d  unchanged=%d",
         stats["synced"],
         stats["deleted"],
         stats["skipped"],
+        stats["unchanged"],
     )
 
 

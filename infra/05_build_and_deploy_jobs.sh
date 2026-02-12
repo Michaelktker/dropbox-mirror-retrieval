@@ -62,6 +62,10 @@ gcloud run jobs update "${JOB_SYNC}" \
   --image="${IMAGE_SYNC}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
+  --set-env-vars="\
+GCP_PROJECT_ID=${PROJECT_ID},\
+GCP_REGION=${REGION},\
+GCS_BUCKET_NAME=${BUCKET_NAME}" \
   --quiet
 
 echo ""
@@ -93,6 +97,15 @@ gcloud run jobs update "${JOB_EMBED}" \
   --image="${IMAGE_EMBED}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
+  --set-env-vars="\
+GCP_PROJECT_ID=${PROJECT_ID},\
+GCP_REGION=${REGION},\
+GCS_BUCKET_NAME=${BUCKET_NAME},\
+VECTOR_SEARCH_INDEX_ID=${VECTOR_SEARCH_INDEX_ID},\
+VECTOR_SEARCH_ENDPOINT_ID=${VECTOR_SEARCH_ENDPOINT_ID},\
+VECTOR_SEARCH_DEPLOYED_INDEX_ID=${VS_DEPLOYED_INDEX_ID},\
+VERTEX_SEARCH_DATASTORE_ID=${VERTEX_SEARCH_DATASTORE_ID_VAL},\
+VERTEX_SEARCH_ENGINE_ID=${VERTEX_SEARCH_ENGINE_ID_VAL}" \
   --quiet
 
 echo ""
