@@ -29,9 +29,9 @@ export VS_INDEX_DISPLAY_NAME="dropbox-image-index"
 export VS_ENDPOINT_DISPLAY_NAME="dropbox-image-endpoint"
 export VS_DEPLOYED_INDEX_ID="deployed_dropbox_images"
 
-# Vertex AI Search (Discovery Engine)
-export DATASTORE_ID="dropbox-docs-datastore"
-export SEARCH_ENGINE_ID="dropbox-docs-engine"
+# Vertex AI Search (Discovery Engine) — with OCR enabled
+export DATASTORE_ID="dropbox-docs-datastore-ocr"
+export SEARCH_ENGINE_ID="dropbox-docs-engine-ocr"
 
 # Cloud Scheduler
 export SCHEDULER_SYNC="daily-dropbox-sync"

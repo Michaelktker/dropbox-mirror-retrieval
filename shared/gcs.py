@@ -48,6 +48,13 @@ def download_bytes(bucket_name: str, key: str) -> bytes:
     return blob.download_as_bytes()
 
 
+def get_blob_size(bucket_name: str, key: str) -> int:
+    """Get the size of a blob in bytes. Returns 0 if blob doesn't exist."""
+    blob = _bucket(bucket_name).blob(key)
+    blob.reload()  # Fetch metadata from GCS
+    return blob.size or 0
+
+
 # ── Delete ───────────────────────────────────────────────────
 
 

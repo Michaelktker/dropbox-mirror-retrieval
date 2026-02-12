@@ -23,6 +23,7 @@ from vertexai.vision_models import Image, MultiModalEmbeddingModel  # noqa: E402
 from shared import config  # noqa: E402
 from shared.gcs import (  # noqa: E402
     download_bytes,
+    get_blob_size,
     list_blobs,
     read_json,
     write_json,
@@ -35,6 +36,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BUCKET = config.GCS_BUCKET_NAME
+
+# Vertex AI multimodal embedding has a 27MB base64 string limit.
+# Base64 adds ~33% overhead, so we limit raw file size to 20MB.
+MAX_IMAGE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
 def run() -> None:
@@ -87,10 +92,26 @@ def run() -> None:
             stats["skipped"] += 1
             continue
 
+        # ── Check file size before downloading ─────────
+        image_key = f"{config.GCS_PREFIX_IMAGES}{file_id}"
+        try:
+            file_size = get_blob_size(BUCKET, image_key)
+        except Exception:
+            file_size = 0
+
+        if file_size > MAX_IMAGE_SIZE_BYTES:
+            logger.info(
+                "Skipping %s — size %d MB exceeds 20 MB limit",
+                meta.get("caption", file_id),
+                file_size // (1024 * 1024),
+            )
+            stats["skipped"] += 1
+            continue
+
         # ── Embed ─────────────────────────────────────────
         try:
             gcs_uri = meta["gcs_uri"]
-            image_bytes = download_bytes(BUCKET, f"{config.GCS_PREFIX_IMAGES}{file_id}")
+            image_bytes = download_bytes(BUCKET, image_key)
             image = Image(image_bytes=image_bytes)
 
             response = model.get_embeddings(
