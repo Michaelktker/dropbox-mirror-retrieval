@@ -301,9 +301,9 @@ gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/
 ## Phase 8: Sign-Off
 
 - [x] All automated tests pass (Test B incremental sync is optional manual test)
-- [ ] Commit and push code to `main`
-- [ ] Document any IDs/values in a secure location
-- [ ] Project complete
+- [x] Commit and push code to `main` (commit `c547696`)
+- [x] Document any IDs/values in a secure location (see table below)
+- [x] **Project complete** ✅
 
 ### Key IDs for Reference
 | Resource | ID |
