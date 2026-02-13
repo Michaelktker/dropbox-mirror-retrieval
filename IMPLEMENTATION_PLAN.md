@@ -249,15 +249,13 @@ gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/docs/ | head -20
 gsutil ls gs://gen-lang-client-0540480379-dropbox-mirror/mirror/state/
 ```
 
-### Test B — Incremental sync (Optional Manual Test)
-> **Note**: This test requires manual changes in Dropbox. The sync job has been verified working via scheduler trigger.
-
-- [ ] Rename a folder in Dropbox
-- [ ] Add a new file, delete another
-- [ ] Re-run sync job
-- [ ] Verify new file appeared in GCS
-- [ ] Verify deleted file removed from GCS + meta
-- [ ] Verify metadata updated for renamed paths
+### Test B — Incremental sync ✅ COMPLETE
+- [x] Renamed folder in Dropbox (`/gbg9427h/` → `/Car Matters/`)
+- [x] Deleted a file (`/camera uploads/2022-12-23 13.44.21.png`)
+- [x] Re-ran sync job (execution `sync-dropbox-to-gcs-g8mt4`)
+- [x] New files appeared in GCS (54 synced under new path)
+- [x] Deleted files removed from GCS + meta (55 deleted including old folder paths)
+- [x] Metadata updated for renamed paths ✓
 
 ### Test C — Image embeddings ✅ COMPLETE
 - [x] Index recreated with `STREAM_UPDATE` (was `BATCH_UPDATE`)
