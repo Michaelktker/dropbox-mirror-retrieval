@@ -16,13 +16,13 @@ export GCP_PROJECT_ID="${PROJECT_ID}"
 export GCP_REGION="${REGION}"
 
 # Vector Search IDs
-export VECTOR_SEARCH_INDEX_ID="8915836435542573056"
-export VECTOR_SEARCH_ENDPOINT_ID="7079528871854342144"
+export VECTOR_SEARCH_INDEX_ID="3582448576829063168"
+export VECTOR_SEARCH_ENDPOINT_ID="2432588112593944576"
 export VECTOR_SEARCH_DEPLOYED_INDEX_ID="deployed_dropbox_images"
 
 # Vertex AI Search IDs
-export VERTEX_SEARCH_DATASTORE_ID="dropbox-docs-datastore"
-export VERTEX_SEARCH_ENGINE_ID="dropbox-docs-engine"
+export VERTEX_SEARCH_DATASTORE_ID="dropbox-docs-datastore-ocr"
+export VERTEX_SEARCH_ENGINE_ID="dropbox-docs-engine-ocr"
 
 # Display config
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
