@@ -42,6 +42,24 @@ def upload_bytes(
     return uri
 
 
+def upload_from_filename(
+    bucket_name: str,
+    key: str,
+    local_path: str,
+    content_type: str = "application/octet-stream",
+    timeout: int = 600,
+) -> str:
+    """Upload a local file to GCS by path (avoids loading into memory).
+
+    Returns the gs:// URI.
+    """
+    blob = _bucket(bucket_name).blob(key)
+    blob.upload_from_filename(local_path, content_type=content_type, timeout=timeout)
+    uri = f"gs://{bucket_name}/{key}"
+    logger.debug("Uploaded %s from %s", uri, local_path)
+    return uri
+
+
 def download_bytes(bucket_name: str, key: str) -> bytes:
     """Download a blob as bytes."""
     blob = _bucket(bucket_name).blob(key)

@@ -44,15 +44,16 @@ gcloud run jobs create "${JOB_SYNC}" \
   --image="${IMAGE_SYNC}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
-  --task-timeout=3600 \
+  --task-timeout=7200 \
   --max-retries=2 \
-  --memory=2Gi \
-  --cpu=1 \
+  --memory=4Gi \
+  --cpu=2 \
   --service-account="${SA_EMAIL}" \
   --set-env-vars="\
 GCP_PROJECT_ID=${PROJECT_ID},\
 GCP_REGION=${REGION},\
-GCS_BUCKET_NAME=${BUCKET_NAME}" \
+GCS_BUCKET_NAME=${BUCKET_NAME},\
+SCRATCH_DIR=/scratch" \
   --set-secrets="\
 DROPBOX_APP_KEY=${SECRET_DROPBOX_APP_KEY}:latest,\
 DROPBOX_APP_SECRET=${SECRET_DROPBOX_APP_SECRET}:latest,\
@@ -62,10 +63,14 @@ gcloud run jobs update "${JOB_SYNC}" \
   --image="${IMAGE_SYNC}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
+  --task-timeout=7200 \
+  --memory=4Gi \
+  --cpu=2 \
   --set-env-vars="\
 GCP_PROJECT_ID=${PROJECT_ID},\
 GCP_REGION=${REGION},\
-GCS_BUCKET_NAME=${BUCKET_NAME}" \
+GCS_BUCKET_NAME=${BUCKET_NAME},\
+SCRATCH_DIR=/scratch" \
   --quiet
 
 echo ""

@@ -3,21 +3,24 @@
 **Status**: 
 - **Image embeddings** ✅ COMPLETE — 22,252/22,277 embedded (99.9%)
 - **Document import** ✅ COMPLETE — 4,108/4,144 docs imported to OCR-enabled Vertex AI Search datastore (99.1%)
+- **ZIP file support** ✅ DEPLOYED — extracts images/docs from ZIPs up to 10 GB
 
 ---
 
 ## Completed Jobs Summary
 
-Both processes completed successfully on Google Cloud infrastructure.
+All processes completed successfully on Google Cloud infrastructure.
 
 | Process | Status | Final Count |
 |---------|--------|-------------|
 | **Document Import** | ✅ Complete | 4,108/4,144 (99.1%) |
 | **Image Embedding** | ✅ Complete | 22,252/22,277 (99.9%) |
+| **ZIP Processing** | ✅ Deployed | Streaming extraction enabled |
 
 **Notes:**
 - 36 documents failed to import (likely unsupported formats or corrupted files)
 - 25 images skipped (exceeded 20MB size limit or embedding errors)
+- ZIP files are extracted and contents indexed by category (images → Vector Search, docs → Vertex AI Search)
 
 ---
 
@@ -33,7 +36,47 @@ Vertex AI Search requires files with extensions (`.pdf`, `.docx`, etc.) but docs
 4. ✅ Rebuilt and pushed sync job with extension changes
 5. ✅ Cleared rev_index doc entries + cursor to force full re-sync
 6. ✅ Ran sync job — docs re-downloaded with `.pdf`, `.docx`, etc. extensions (4,144 total)
-7. ✅ Import triggered to OCR-enabled Vertex AI Search datastore (running now)
+7. ✅ Import triggered to OCR-enabled Vertex AI Search datastore
+
+---
+
+## ZIP File Processing ✅ DEPLOYED (2026-02-15)
+
+Added support for extracting and indexing contents of ZIP archives up to 10 GB.
+
+### New Files Created
+- `shared/dropbox_download.py` — chunked streaming download for large files
+- `shared/zip_handler.py` — disk-based streaming ZIP extraction
+
+### Changes to Existing Files
+- `jobs/sync_dropbox_to_gcs/main.py` — ZIP detection, extraction, and upload logic
+- `shared/gcs.py` — added `upload_from_filename()` for disk-based uploads
+- `infra/05_build_and_deploy_jobs.sh` — increased memory (4Gi), CPU (2), timeout (7200s)
+
+### How It Works
+1. Sync job detects `.zip` files in Dropbox
+2. Downloads ZIP to `/scratch` disk (streaming, not in-memory)
+3. Extracts files one at a time to minimize memory usage
+4. Categorizes each extracted file (images/docs/media)
+5. Uploads to appropriate GCS prefix with synthetic ID: `<zip_id>___<inner_path>`
+6. Doc files preserve extensions for Vertex AI Search compatibility
+7. Metadata includes `source_zip` field to track origin
+
+### Limits
+| Constraint | Value |
+|------------|-------|
+| Max ZIP size | 10 GB |
+| Max inner file size | 1 GB |
+| Cloud Run memory | 4 GiB |
+| Cloud Run timeout | 2 hours |
+| Nested ZIPs | Not supported (skipped) |
+
+### Integration Points
+- **rev_index** — tracks ZIP rev to skip unchanged archives
+- **path_index** — maps `<zip_path>!/<inner_path>` → synthetic file ID
+- **Deletion handling** — deleting a ZIP removes all extracted children
+- **Job B** — extracted images automatically picked up for embedding
+- **Vertex AI Search** — extracted docs automatically imported
 
 ---
 

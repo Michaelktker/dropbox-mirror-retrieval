@@ -21,8 +21,11 @@ indexes **images** via Vertex AI Vector Search (multimodal embeddings) and
 ```
 Dropbox (source of truth)
   │
+  ├── Regular files (images, docs, media)
+  └── ZIP archives (up to 10 GB) ─► extracted during sync
+  │
   ▼
-Cloud Run Job A  (daily sync)
+Cloud Run Job A  (daily sync, 4Gi RAM, 2hr timeout)
   │
   ▼
 GCS  gs://<PROJECT>-dropbox-mirror/
@@ -51,7 +54,9 @@ Retrieval: cURL only (no Python search API)
 │   ├── config.py                      # Env-var config
 │   ├── categories.py                  # Extension → category mapping
 │   ├── gcs.py                         # GCS helper functions
-│   └── dropbox_client.py              # Dropbox SDK wrapper (refresh-token)
+│   ├── dropbox_client.py              # Dropbox SDK wrapper (refresh-token)
+│   ├── dropbox_download.py            # Chunked download for large files
+│   └── zip_handler.py                 # Streaming ZIP extraction
 │
 ├── jobs/
 │   ├── sync_dropbox_to_gcs/           # Job A — Dropbox → GCS mirror
@@ -229,6 +234,17 @@ Output is JSON:
 | images | bmp gif jpg jpeg png | `mirror/images/` | Vector Search (multimodal embeddings, dim=1408) |
 | docs | pdf docx xlsx pptx txt html | `mirror/docs/` | Vertex AI Search (unstructured) |
 | media | mp3 wav mp4 mov | `mirror/media/` | Stored only (no indexing) |
+| **archives** | **zip** | *(extracted)* | **Contents extracted and categorized individually** |
+
+### ZIP File Processing
+
+ZIP archives (up to 10 GB) are automatically extracted during sync:
+- Each file inside is categorized by its extension
+- Images → embedded in Vector Search
+- Docs → imported to Vertex AI Search  
+- Extracted files get synthetic IDs: `<zip_id>___<inner_path>`
+- Metadata includes `source_zip` field for traceability
+- Deleting a ZIP from Dropbox removes all extracted contents from GCS
 
 ---
 
@@ -247,6 +263,23 @@ Each file gets a JSON sidecar at `mirror/meta/<file_id>.json`:
   "category": "images",
   "gcs_uri": "gs://my-project-dropbox-mirror/mirror/images/abc123def456",
   "caption": "sunset.jpg"
+}
+```
+
+For files extracted from ZIP archives, an additional field is included:
+
+```json
+{
+  "dropbox_file_id": "abc123___Photos_sunset.jpg",
+  "dropbox_path": "/Archives/backup.zip!/Photos/sunset.jpg",
+  "rev": "015f2a...",
+  "mime_type": "image/jpeg",
+  "size": 2048576,
+  "server_modified": "2025-12-01 10:30:00",
+  "category": "images",
+  "gcs_uri": "gs://my-project-dropbox-mirror/mirror/images/abc123___Photos_sunset.jpg",
+  "caption": "sunset.jpg",
+  "source_zip": "/Archives/backup.zip"
 }
 ```
 
