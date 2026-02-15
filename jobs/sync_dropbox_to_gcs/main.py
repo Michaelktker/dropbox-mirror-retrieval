@@ -32,6 +32,7 @@ from shared.gcs import (  # noqa: E402
     upload_from_filename,
     write_json,
 )
+from shared.vertex_search import DocImportBuffer  # noqa: E402
 
 from dropbox.files import DeletedMetadata, FileMetadata, FolderMetadata  # noqa: E402
 
@@ -96,8 +97,9 @@ def run() -> None:
         entries, new_cursor = dbx.list_all("")
 
     # ── Process entries ───────────────────────────────────
-    stats = {"synced": 0, "deleted": 0, "skipped": 0, "unchanged": 0, "zip_extracted": 0}
+    stats = {"synced": 0, "deleted": 0, "skipped": 0, "unchanged": 0, "zip_extracted": 0, "docs_imported": 0}
     total_processed = 0
+    doc_buffer = DocImportBuffer()  # Batch doc imports (50 at a time)
 
     def save_state_checkpoint():
         """Save state periodically to survive timeouts."""
@@ -271,6 +273,11 @@ def run() -> None:
                         }
                         write_json(BUCKET, meta_key(inner_id), meta_obj)
 
+                        # Queue doc for batched import to Vertex AI Search
+                        if inner_cat == "docs":
+                            doc_buffer.add(gcs_uri)
+                            logger.debug("Queued ZIP-extracted doc for import: %s", extracted.filename)
+
                         # Update path_index for this extracted file
                         synthetic_path = f"{entry.path_lower}!/{extracted.inner_path}"
                         path_index[synthetic_path] = inner_id
@@ -364,6 +371,11 @@ def run() -> None:
             }
             write_json(BUCKET, meta_key(file_id), meta_obj)
 
+            # Queue doc for batched import to Vertex AI Search
+            if cat == "docs":
+                doc_buffer.add(gcs_uri)
+                logger.debug("Queued doc for import: %s", entry.name)
+
             # Update indexes
             path_index[entry.path_lower] = file_id
             rev_index[file_id] = entry.rev
@@ -381,13 +393,18 @@ def run() -> None:
     write_json(BUCKET, config.PATH_INDEX_KEY, path_index)
     write_json(BUCKET, config.REV_INDEX_KEY, rev_index)
 
+    # Flush any remaining docs and get import stats
+    docs_imported, docs_failed = doc_buffer.get_stats()
+
     logger.info(
-        "Sync complete — synced=%d  deleted=%d  skipped=%d  unchanged=%d  zip_extracted=%d",
+        "Sync complete — synced=%d  deleted=%d  skipped=%d  unchanged=%d  zip_extracted=%d  docs_imported=%d  docs_failed=%d",
         stats["synced"],
         stats["deleted"],
         stats["skipped"],
         stats["unchanged"],
         stats["zip_extracted"],
+        docs_imported,
+        docs_failed,
     )
 
 

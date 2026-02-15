@@ -25,6 +25,7 @@ VERTEX_SEARCH_ENGINE_ID_VAL="${VERTEX_SEARCH_ENGINE_ID:-${SEARCH_ENGINE_ID}}"
 
 echo "═══ Building & pushing sync job image ═══"
 docker build \
+  --platform linux/amd64 \
   -t "${IMAGE_SYNC}" \
   -f "${REPO_ROOT}/jobs/sync_dropbox_to_gcs/Dockerfile" \
   "${REPO_ROOT}"
@@ -33,6 +34,7 @@ docker push "${IMAGE_SYNC}"
 echo ""
 echo "═══ Building & pushing embed job image ═══"
 docker build \
+  --platform linux/amd64 \
   -t "${IMAGE_EMBED}" \
   -f "${REPO_ROOT}/jobs/embed_images_to_vector_search/Dockerfile" \
   "${REPO_ROOT}"
@@ -46,13 +48,14 @@ gcloud run jobs create "${JOB_SYNC}" \
   --project="${PROJECT_ID}" \
   --task-timeout=7200 \
   --max-retries=2 \
-  --memory=4Gi \
+  --memory=8Gi \
   --cpu=2 \
   --service-account="${SA_EMAIL}" \
   --set-env-vars="\
 GCP_PROJECT_ID=${PROJECT_ID},\
 GCP_REGION=${REGION},\
 GCS_BUCKET_NAME=${BUCKET_NAME},\
+VERTEX_SEARCH_DATASTORE_ID=${VERTEX_SEARCH_DATASTORE_ID_VAL},\
 SCRATCH_DIR=/scratch" \
   --set-secrets="\
 DROPBOX_APP_KEY=${SECRET_DROPBOX_APP_KEY}:latest,\
@@ -64,12 +67,13 @@ gcloud run jobs update "${JOB_SYNC}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
   --task-timeout=7200 \
-  --memory=4Gi \
+  --memory=8Gi \
   --cpu=2 \
   --set-env-vars="\
 GCP_PROJECT_ID=${PROJECT_ID},\
 GCP_REGION=${REGION},\
 GCS_BUCKET_NAME=${BUCKET_NAME},\
+VERTEX_SEARCH_DATASTORE_ID=${VERTEX_SEARCH_DATASTORE_ID_VAL},\
 SCRATCH_DIR=/scratch" \
   --quiet
 
